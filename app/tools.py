@@ -100,3 +100,58 @@ def get_weather_stateful(city: str, tool_context: ToolContext) -> dict:
         print(f"--- Tool: City '{city}' not found. ---")
         return {"status": "error", "error_message": error_msg}
 
+def execute_maven_command(command: str, working_dir: str) -> dict:
+    """Executes a Maven command and returns the result.
+
+    Args:
+        command (str): The Maven command to execute (e.g., "clean", "compile", "install", "test", "package")
+        working_dir (str, optional): The working directory where the command should be executed.
+                                   If None, uses the current directory.
+
+    Returns:
+        dict: A dictionary containing:
+            - status: "success" or "error"
+            - output: The command output if successful
+            - error: Error message if the command failed
+    """
+    import subprocess
+    import os
+    from typing import Optional
+
+    print(f"--- Tool: execute_maven_command called with command: {command} ---")
+
+    try:
+        # Construct the full Maven command
+        mvn_cmd = ["mvn"] + command.split()
+        
+        # Set up the working directory if specified
+        cwd = working_dir if working_dir else os.getcwd()
+        
+        # Execute the command and capture output
+        result = subprocess.run(
+            mvn_cmd,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        
+        return {
+            "status": "success",
+            "output": result.stdout,
+            "error": None
+        }
+        
+    except subprocess.CalledProcessError as e:
+        return {
+            "status": "error",
+            "output": None,
+            "error": f"Maven command failed: {e.stderr}"
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "output": None,
+            "error": f"Unexpected error executing Maven command: {str(e)}"
+        }
+

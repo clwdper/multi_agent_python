@@ -11,7 +11,8 @@ import warnings
 from app import get_weather, get_session, get_session_stateful, get_runner, say_hello, say_goodbye, get_weather_stateful
 from app.models import  MODEL_GEMINI_2_0_FLASH, MODEL_GPT_4O, MODEL_CLAUDE_SONNET
 
-from app.subAgentUtils import createAgent
+from app.agentUtils import createAgent
+from app.tools import execute_maven_command
 
 
 # Ignore all warnings
@@ -80,6 +81,17 @@ farewell_agent = createAgent(model=MODEL_GEMINI_2_0_FLASH,
                                 "Do not perform any other actions.",
                                 description="Handles simple farewells and goodbyes using the 'say_goodbye' tool.", # Crucial for delegation
                                 tools=[say_goodbye])
+
+
+maven_agent = createAgent(model=MODEL_GEMINI_2_0_FLASH,
+                                name="maven_agent",
+                                instruction="You are the Java Maven Agent. Your ONLY task is to run maven commands. "
+                                "Use the 'execute_maven_command' tool when the user requires you to run a maven command, they will provide you the command as well as the path or working_dir."
+                                "(e.g., using words like 'run', 'execute', 'mvn', 'build', 'clean', 'install', 'test', 'package'). "
+                                "Do not perform any other actions.",
+                                description="Handles simple maven commands using the 'execute_maven_command' tool.", # Crucial for delegation
+                                tools=[execute_maven_command])
+
  
 ##################################################################
 # @title Define the Root Agent with Sub-Agents
@@ -95,7 +107,7 @@ SESSION_ID = "session_001_agent_team"
 
 retrieved_session, session_service_stateful = get_session_stateful(app_name=APP_NAME, user_id=USER_ID, session_id=SESSION_ID)
 
-if greeting_agent and farewell_agent and 'get_weather_stateful' in globals():
+if greeting_agent and farewell_agent and maven_agent and 'get_weather_stateful' in globals():
     # Let's use a capable Gemini model for the root agent to handle orchestration
     root_agent_model = MODEL_GEMINI_2_0_FLASH
     
@@ -107,9 +119,10 @@ if greeting_agent and farewell_agent and 'get_weather_stateful' in globals():
                                   "Use the 'get_weather' tool ONLY for specific weather requests (e.g., 'weather in London'). "
                                   "You have specialized sub-agents: "
                                   "1. 'greeting_agent': Handles simple greetings like 'Hi', 'Hello'. Delegate to it for these. "
-                                  "2. 'farewell_agent': Handles simple farewells like 'Bye', 'See you'. Delegate to it for these. ", 
+                                  "2. 'farewell_agent': Handles simple farewells like 'Bye', 'See you'. Delegate to it for these. "
+                                  "3. 'maven_agent': Handles maven commands. Delegate to it for these. ",
                                   tools=[get_weather_stateful], 
-                                  subAgentList=[greeting_agent, farewell_agent],
+                                  subAgentList=[greeting_agent, farewell_agent, maven_agent],
                                   outputKey="last_weather_report"
                                   )
      
@@ -124,13 +137,11 @@ else:
     print("❌ Cannot create root agent because one or more sub-agents failed to initialize or 'get_weather' tool is missing.")
     if not greeting_agent: print(" - Greeting Agent is missing.")
     if not farewell_agent: print(" - Farewell Agent is missing.")
+    if not maven_agent: print(" - Maven Agent is missing.")
     if 'get_weather_stateful' not in globals(): print(" - get_weather_stateful function is missing.")
 
 
-#clwd start
 # @title 4. Interact to Test State Flow and output_key
-
-
 
 if 'runner_root_stateful' in globals() and runner_root_stateful:
     # Define the main async function for the stateful conversation logic.
@@ -139,8 +150,13 @@ if 'runner_root_stateful' in globals() and runner_root_stateful:
         print("\n--- Testing State: Temp Unit Conversion & output_key ---")
 
         # 1. Check weather (Uses initial state: Celsius)
-        print("--- Turn 1: Requesting weather in London (expect Celsius) ---")
-        await call_agent_async(query= "What's the weather in London?",
+        # print("--- Turn 1: Requesting weather in London (expect Celsius) ---")
+        # await call_agent_async(query= "What's the weather in London?",
+        #                        runner=runner_root_stateful,
+        #                        user_id=USER_ID,
+        #                        session_id=SESSION_ID
+        #                       )
+        await call_agent_async(query= "run maven compile on this path: /Users/clearencewissar/clwd_per_code/mvn-tut",
                                runner=runner_root_stateful,
                                user_id=USER_ID,
                                session_id=SESSION_ID
