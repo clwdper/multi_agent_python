@@ -25,35 +25,7 @@ load_dotenv()
 # Configure ADK to use API keys directly (not Vertex AI for this multi-model setup)
 os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "False"
 
-# @title Define the Weather Agent
-# Use one of the model constants defined earlier
-AGENT_MODEL = MODEL_GEMINI_2_0_FLASH # Starting with Gemini
 
-weather_agent = Agent(
-    name="weather_agent_v1",
-    model=AGENT_MODEL, # Can be a string for Gemini or a LiteLlm object
-    description="Provides weather information for specific cities.",
-    instruction="You are a helpful weather assistant. "
-                "When the user asks for the weather in a specific city, "
-                "use the 'get_weather' tool to find the information. "
-                "If the tool returns an error, inform the user politely. "
-                "If the tool is successful, present the weather report clearly.",
-    tools=[get_weather], # Pass the function directly
-)
-
-
-# Define constants for identifying the interaction context
-APP_NAME = "weather_tutorial_app"
-USER_ID = "user_1"
-SESSION_ID = "session_001" # Using a fixed ID for simplicity
-
-session, session_service = get_session(APP_NAME, USER_ID, SESSION_ID)
-
-# --- Runner ---
-runner = get_runner(weather_agent, session_service, APP_NAME)
-
-
-# @title Define Agent Interaction Function
 
 async def call_agent_async(query: str, runner, user_id, session_id):
   """Sends a query to the agent and prints the final response."""
@@ -81,26 +53,6 @@ async def call_agent_async(query: str, runner, user_id, session_id):
           break # Stop processing events once the final response is found
 
   print(f"<<< Agent Response: {final_response_text}")
-
-
-# @title Run the Initial Conversation
-
-# We need an async function to await our interaction helper
-async def run_conversation():
-    await call_agent_async("What is the weather like in London?",
-                                       runner=runner,
-                                       user_id=USER_ID,
-                                       session_id=SESSION_ID)
-
-    await call_agent_async("How about Paris?",
-                                       runner=runner,
-                                       user_id=USER_ID,
-                                       session_id=SESSION_ID) # Expecting the tool's error message
-
-    await call_agent_async("Tell me the weather in New York",
-                                       runner=runner,
-                                       user_id=USER_ID,
-                                       session_id=SESSION_ID)
 
 
 ##########################################################
@@ -163,13 +115,7 @@ else:
     if 'get_weather' not in globals(): print(" - get_weather function is missing.")
 
 
-
-
-
-
 # @title Interact with the Agent Team
-
-
 # Ensure the root agent (e.g., 'weather_agent_team' or 'root_agent' from the previous cell) is defined.
 # Ensure the call_agent_async function is defined.
 
@@ -192,6 +138,7 @@ if root_agent_var_name in globals() and globals()[root_agent_var_name]:
         APP_NAME = "weather_tutorial_agent_team"
         USER_ID = "user_1_agent_team"
         SESSION_ID = "session_001_agent_team"
+        
         session = session_service.create_session(
             app_name=APP_NAME, user_id=USER_ID, session_id=SESSION_ID
         )
@@ -219,25 +166,6 @@ if root_agent_var_name in globals() and globals()[root_agent_var_name]:
                                user_id=USER_ID,
                                session_id=SESSION_ID)
 
-    # --- Execute the `run_team_conversation` async function ---
-    # Choose ONE of the methods below based on your environment.
-    # Note: This may require API keys for the models used!
-
-    # METHOD 1: Direct await (Default for Notebooks/Async REPLs)
-    # If your environment supports top-level await (like Colab/Jupyter notebooks),
-    # it means an event loop is already running, so you can directly await the function.
-    print("Attempting execution using 'await' (default for notebooks)...")
- 
-
-    # METHOD 2: asyncio.run (For Standard Python Scripts [.py])
-    # If running this code as a standard Python script from your terminal,
-    # the script context is synchronous. `asyncio.run()` is needed to
-    # create and manage an event loop to execute your async function.
-    # To use this method:
-    # 1. Comment out the `await run_team_conversation()` line above.
-    # 2. Uncomment the following block:
-  
-    import asyncio
     if __name__ == "__main__": # Ensures this runs only when script is executed directly
         print("Executing using 'asyncio.run()' (for standard Python scripts)...")
         try:
