@@ -3,7 +3,7 @@ from google.adk.agents import Agent
 import os
 os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "False"
 
-def createAgent(*,model, name, instruction, description, tools=None, subAgentList=None):
+def createAgent(*,model, name, instruction, description, tools=None, subAgentList=None, outputKey=None):
     subAgent = None
     try:
         subAgent = Agent(
@@ -12,7 +12,8 @@ def createAgent(*,model, name, instruction, description, tools=None, subAgentLis
             instruction=instruction,
             description=description,
             tools=tools or [],
-            sub_agents=subAgentList or []
+            sub_agents=subAgentList or [],
+            output_key=outputKey
         )
         print(f"✅ sub agent '{subAgent.name}' created using model '{subAgent.model}'.")
     except Exception as e:
