@@ -1,12 +1,13 @@
 from google.adk.models.lite_llm import LiteLlm 
 from google.adk.agents import Agent
+from google.adk.agents.llm_agent import LlmAgent
 import os
 os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "False"
 
 def createAgent(*,model, name, instruction, description, tools=None, subAgentList=None, outputKey=None):
     subAgent = None
     try:
-        subAgent = Agent(
+        subAgent = LlmAgent(
             model = model,
             name=name,
             instruction=instruction,

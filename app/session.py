@@ -40,15 +40,15 @@ def get_session_stateful(*, app_name, user_id, session_id, initial_state={
         session_id=SESSION_ID_STATEFUL,
         state=initial_state
     )
-    print(f"✅ Session '{SESSION_ID_STATEFUL}' created for user '{USER_ID_STATEFUL}'.")
+    # print(f"✅ Session '{SESSION_ID_STATEFUL}' created for user '{USER_ID_STATEFUL}'.")
 
     # Verify the initial state was set correctly
     retrieved_session = session_service_stateful.get_session(app_name=app_name,
                                                             user_id=USER_ID_STATEFUL,
                                                             session_id = SESSION_ID_STATEFUL)
-    print("\n--- Initial Session State ---")
-    if retrieved_session:
-        print(retrieved_session.state)
-    else:
-        print("Error: Could not retrieve session.")
+    # print("\n--- Initial Session State ---")
+    # if retrieved_session:
+        # print(retrieved_session.state)
+    # else:
+        # print("Error: Could not retrieve session.")
     return retrieved_session, session_service_stateful
