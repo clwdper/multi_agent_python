@@ -8,8 +8,13 @@ from google.adk.runners import Runner
 from google.genai import types # For creating message Content/Parts
 import warnings
 
+from google.adk.tools.mcp_tool.mcp_toolset import (
+    MCPToolset,
+    SseServerParams,
+    StdioServerParameters,
+)
 from app import get_weather, get_session, get_session_stateful, get_runner, say_hello, say_goodbye, get_weather_stateful
-from app.models import  MODEL_GEMINI_2_0_FLASH, MODEL_GPT_4O, MODEL_CLAUDE_SONNET
+from app.models import MODEL_GEMINI_2_0_FLASH, MODEL_GPT_4O, MODEL_CLAUDE_SONNET
 
 from app.agentUtils import createAgent
 from app.tools import execute_maven_command
@@ -27,10 +32,9 @@ load_dotenv()
 os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "False"
 
 
-
 async def call_agent_async(query: str, runner, user_id, session_id):
   """Sends a query to the agent and prints the final response."""
-  print(f"\n>>> User Query: {query}")
+  print(f">>> User Query: {query}")
 
   # Prepare the user's message in ADK format
   content = types.Content(role='user', parts=[types.Part(text=query)])
@@ -57,7 +61,7 @@ async def call_agent_async(query: str, runner, user_id, session_id):
 
 
 ##########################################################
-# @title Define Greeting and Farewell Sub-Agents
+# Define Greeting and Farewell Sub-Agents
 ##########################################################
 
 
@@ -92,9 +96,59 @@ maven_agent = createAgent(model=MODEL_GEMINI_2_0_FLASH,
                                 description="Handles simple maven commands using the 'execute_maven_command' tool.", # Crucial for delegation
                                 tools=[execute_maven_command])
 
+# Define server parameters for MCP Toolset
+server_params = StdioServerParameters(
+    command="node",
+    args=["/Users/clearencewissar/clwd_per_code/ai-agent-claude/multi-agent/team-agents/stdio_server/build/index.js"],
+    env={},
+    cwd="/Users/clearencewissar/clwd_per_code/ai-agent-claude/multi-agent/team-agents/stdio_server",
+    encoding="utf-8",
+    encoding_error_handler="strict"
+)
+
+async def get_tools_async():
+    """Gets tools from the File System MCP Server."""
+    try:
+        tools, exit_stack = await MCPToolset.from_server(
+            connection_params=server_params
+        )
+        print("MCP Toolset created successfully.")
+        return tools, exit_stack
+    except Exception as e:
+        print(f"Error creating MCP Toolset: {e}")
+        return None, None
+
+# Get the MCP toolset asynchronously
+tools_dict = []
+try:
+    tools, exit_stack = asyncio.run(get_tools_async())
+    if tools:
+        tools_dict = tools
+except Exception as e:
+    print(f"Warning: Failed to load MCP tools: {e}")
+
+# Check if tools were loaded successfully
+if tools_dict:
+    try:
+        fix_vulnerability_agent = createAgent(model=MODEL_GEMINI_2_0_FLASH,
+                                        name="fix_vulnerability_agent",
+                                        instruction="You are the fix vulnerability Agent. Your ONLY task is to fix and address vulnerabilities. "
+                                        "Use the 'fix_vulnerability' tool when the user requires you to."
+                                        "(e.g., using words like fix, address vulnerability, fix vulnerability, etc.). "
+                                        "Do not perform any other actions.",
+                                        description="Handles vulnerability fixes using the 'fix_vulnerability' tool.", # Crucial for delegation
+                                        tools=tools_dict
+                                        )
+    except Exception as e:
+        print(f"Error creating fix_vulnerability_agent: {e}")
+        fix_vulnerability_agent = None
+else:
+    print("Warning: MCP tools not available, fix_vulnerability_agent will not be created")
+    fix_vulnerability_agent = None
+
  
 ##################################################################
-# @title Define the Root Agent with Sub-Agents
+# Define the Root Agent with Sub-Agents
 ##################################################################
 
 # Ensure sub-agents were created successfully before defining the root agent.
@@ -107,22 +161,42 @@ SESSION_ID = "session_001_agent_team"
 
 retrieved_session, session_service_stateful = get_session_stateful(app_name=APP_NAME, user_id=USER_ID, session_id=SESSION_ID)
 
-if greeting_agent and farewell_agent and maven_agent and 'get_weather_stateful' in globals():
+# Create list of available sub-agents
+available_sub_agents = []
+if greeting_agent:
+    available_sub_agents.append(greeting_agent)
+if farewell_agent:
+    available_sub_agents.append(farewell_agent)
+if maven_agent:
+    available_sub_agents.append(maven_agent)
+if fix_vulnerability_agent:
+    available_sub_agents.append(fix_vulnerability_agent)
+
+if available_sub_agents and 'get_weather_stateful' in globals():
     # Let's use a capable Gemini model for the root agent to handle orchestration
     root_agent_model = MODEL_GEMINI_2_0_FLASH
+    
+    # Create instruction based on available sub-agents
+    instruction = "You are the main Weather Agent coordinating a team. Your primary responsibility is to provide weather information. "
+    instruction += "Use the 'get_weather' tool ONLY for specific weather requests (e.g., 'weather in London'). "
+    instruction += "You have specialized sub-agents: "
+    
+    if greeting_agent:
+        instruction += "1. 'greeting_agent': Handles simple greetings like 'Hi', 'Hello'. Delegate to it for these. "
+    if farewell_agent:
+        instruction += "2. 'farewell_agent': Handles simple farewells like 'Bye', 'See you'. Delegate to it for these. "
+    if maven_agent:
+        instruction += "3. 'maven_agent': Handles maven commands. Delegate to it for these. "
+    if fix_vulnerability_agent:
+        instruction += "4. 'fix_vulnerability_agent': Handles vulnerability fixes. Delegate to it for these. "
     
     root_agent_stateful = createAgent(
                                   model=root_agent_model,
                                   name="weather_agent_v4_stateful",
                                   description="The main coordinator agent. Handles weather requests and delegates greetings/farewells to specialists.",
-                                  instruction="You are the main Weather Agent coordinating a team. Your primary responsibility is to provide weather information. "
-                                  "Use the 'get_weather' tool ONLY for specific weather requests (e.g., 'weather in London'). "
-                                  "You have specialized sub-agents: "
-                                  "1. 'greeting_agent': Handles simple greetings like 'Hi', 'Hello'. Delegate to it for these. "
-                                  "2. 'farewell_agent': Handles simple farewells like 'Bye', 'See you'. Delegate to it for these. "
-                                  "3. 'maven_agent': Handles maven commands. Delegate to it for these. ",
+                                  instruction=instruction,
                                   tools=[get_weather_stateful], 
-                                  subAgentList=[greeting_agent, farewell_agent, maven_agent],
+                                  subAgentList=available_sub_agents,
                                   outputKey="last_weather_report"
                                   )
      
@@ -134,55 +208,70 @@ if greeting_agent and farewell_agent and maven_agent and 'get_weather_stateful' 
     )
     print(f"✅ Runner created for stateful root agent '{runner_root_stateful.agent.name}' using stateful session service.")
 else:
-    print("❌ Cannot create root agent because one or more sub-agents failed to initialize or 'get_weather' tool is missing.")
-    if not greeting_agent: print(" - Greeting Agent is missing.")
-    if not farewell_agent: print(" - Farewell Agent is missing.")
-    if not maven_agent: print(" - Maven Agent is missing.")
-    if 'get_weather_stateful' not in globals(): print(" - get_weather_stateful function is missing.")
+    missing_components = []
+    if not available_sub_agents:
+        missing_components.append("No sub-agents available")
+    if not greeting_agent: 
+        missing_components.append("Greeting Agent is missing")
+    if not farewell_agent: 
+        missing_components.append("Farewell Agent is missing")
+    if not maven_agent: 
+        missing_components.append("Maven Agent is missing")
+    if 'get_weather_stateful' not in globals(): 
+        missing_components.append("get_weather_stateful function is missing")
+    
+    print(f"❌ Cannot create root agent because: {', '.join(missing_components)}.")
 
 
-# @title 4. Interact to Test State Flow and output_key
+# Test State Flow and output_key
 
 if 'runner_root_stateful' in globals() and runner_root_stateful:
     # Define the main async function for the stateful conversation logic.
     # The 'await' keywords INSIDE this function are necessary for async operations.
     async def run_stateful_conversation():
-        print("\n--- Testing State: Temp Unit Conversion & output_key ---")
+        print("\
+--- Testing State: Temp Unit Conversion & output_key ---")
 
-        # 1. Check weather (Uses initial state: Celsius)
-        # print("--- Turn 1: Requesting weather in London (expect Celsius) ---")
-        # await call_agent_async(query= "What's the weather in London?",
-        #                        runner=runner_root_stateful,
-        #                        user_id=USER_ID,
-        #                        session_id=SESSION_ID
-        #                       )
+        # 1. Test maven command execution
         await call_agent_async(query= "run maven compile on this path: /Users/clearencewissar/clwd_per_code/mvn-tut",
                                runner=runner_root_stateful,
                                user_id=USER_ID,
                                session_id=SESSION_ID
                               )
 
-        # 2. Manually update state preference to Fahrenheit - DIRECTLY MODIFY STORAGE
-        print("\n--- Manually Updating State: Setting unit to Fahrenheit ---")
+        # 2. Update state preference to Fahrenheit using a proper API method
+        print("\
+--- Updating State: Setting unit to Fahrenheit ---")
         try:
-            # Access the internal storage directly - THIS IS SPECIFIC TO InMemorySessionService for testing
-            # NOTE: In production with persistent services (Database, VertexAI), you would
-            # typically update state via agent actions or specific service APIs if available,
-            # not by direct manipulation of internal storage.
-            stored_session = session_service_stateful.sessions[APP_NAME][USER_ID][SESSION_ID]
-            stored_session.state["user_preference_temperature_unit"] = "Fahrenheit"
-            # Optional: You might want to update the timestamp as well if any logic depends on it
-            # import time
-            # stored_session.last_update_time = time.time()
-            print(f"--- Stored session state updated. Current 'user_preference_temperature_unit': {stored_session.state.get('user_preference_temperature_unit', 'Not Set')} ---") # Added .get for safety
-        except KeyError:
-            print(f"--- Error: Could not retrieve session '{SESSION_ID}' from internal storage for user '{USER_ID}' in app '{APP_NAME}' to update state. Check IDs and if session was created. ---")
+            # Get the current session
+            session = session_service_stateful.get_session(
+                app_name=APP_NAME,
+                user_id=USER_ID,
+                session_id=SESSION_ID
+            )
+            
+            if session:
+                # Update state in a safer way
+                session.state["user_preference_temperature_unit"] = "Fahrenheit"
+                
+                # Save the updated session back to the service
+                session_service_stateful.save_session(
+                    app_name=APP_NAME,
+                    user_id=USER_ID,
+                    session_id=SESSION_ID,
+                    session=session
+                )
+                
+                print(f"--- Session state updated. Current 'user_preference_temperature_unit': {session.state.get('user_preference_temperature_unit', 'Not Set')} ---")
+            else:
+                print(f"--- Error: Could not retrieve session '{SESSION_ID}' from storage ---")
         except Exception as e:
-             print(f"--- Error updating internal session state: {e} ---")
+             print(f"--- Error updating session state: {e} ---")
 
         # 3. Check weather again (Tool should now use Fahrenheit)
         # This will also update 'last_weather_report' via output_key
-        print("\n--- Turn 2: Requesting weather in New York (expect Fahrenheit) ---")
+        print("\
+--- Turn 2: Requesting weather in New York (expect Fahrenheit) ---")
         await call_agent_async(query= "Tell me the weather in New York.",
                                runner=runner_root_stateful,
                                user_id=USER_ID,
@@ -191,7 +280,8 @@ if 'runner_root_stateful' in globals() and runner_root_stateful:
 
         # 4. Test basic delegation (should still work)
         # This will update 'last_weather_report' again, overwriting the NY weather report
-        print("\n--- Turn 3: Sending a greeting ---")
+        print("\
+--- Turn 3: Sending a greeting ---")
         await call_agent_async(query= "Hi!",
                                runner=runner_root_stateful,
                                user_id=USER_ID,
@@ -209,7 +299,7 @@ if 'runner_root_stateful' in globals() and runner_root_stateful:
 
     # --- Inspect final session state after the conversation ---
     # This block runs after either execution method completes.
-    print("\n--- Inspecting Final Session State ---")
+    print("--- Inspecting Final Session State ---")
     final_session = session_service_stateful.get_session(app_name=APP_NAME,
                                                          user_id= USER_ID,
                                                          session_id=SESSION_ID)
@@ -218,10 +308,10 @@ if 'runner_root_stateful' in globals() and runner_root_stateful:
         print(f"Final Preference: {final_session.state.get('user_preference_temperature_unit', 'Not Set')}")
         print(f"Final Last Weather Report (from output_key): {final_session.state.get('last_weather_report', 'Not Set')}")
         print(f"Final Last City Checked (by tool): {final_session.state.get('last_city_checked_stateful', 'Not Set')}")
-        # Print full state for detailed view
-        # print(f"Full State Dict: {final_session.state.as_dict()}") # Use as_dict() for clarity
+        # Print full state for detailed view if needed
+        # print(f"Full State Dict: {final_session.state}")
     else:
-        print("\n❌ Error: Could not retrieve final session state.")
+        print("❌ Error: Could not retrieve final session state.")
 
 else:
-    print("\n⚠️ Skipping state test conversation. Stateful root agent runner ('runner_root_stateful') is not available.")
+    print("Skipping state test conversation. Stateful root agent runner ('runner_root_stateful') is not available.")
