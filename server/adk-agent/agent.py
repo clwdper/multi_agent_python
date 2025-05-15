@@ -12,17 +12,25 @@ from google.adk.sessions import InMemorySessionService
 from google.adk.tools.mcp_tool.mcp_toolset import (
     MCPToolset,
     SseServerParams,
+    StdioServerParameters,
 )
 from google.genai import types
 from rich import print
 load_dotenv()
 
+server_params = StdioServerParameters(
+    command="node",
+    args=["/Users/clearencewissar/clwd_per_code/ai-agent-claude/multi-agent/team-agents/stdio_server/build/index.js"],
+    env={},
+    cwd="/Users/clearencewissar/clwd_per_code/ai-agent-claude/multi-agent/team-agents/stdio_server",
+    encoding="utf-8",
+    encoding_error_handler="strict"
+)
+
 async def get_tools_async():
     """Gets tools from the File System MCP Server."""
     tools, exit_stack = await MCPToolset.from_server(
-        connection_params=SseServerParams(
-            url="http://localhost:8001/sse",
-        )
+        connection_params=server_params
     )
     print("MCP Toolset created successfully.")
     return tools, exit_stack
