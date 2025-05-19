@@ -1,77 +1,115 @@
 # File server.py
 
-import requests
-from requests.exceptions import RequestException
-from bs4 import BeautifulSoup
-from html2text import html2text
+import contextlib
+import logging
+from collections.abc import AsyncIterator
 
-import uvicorn
+import anyio
+import mcp.types as types
+from mcp.server.lowlevel import Server
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.applications import Starlette
-from starlette.requests import Request
-from starlette.routing import Route, Mount
+from starlette.routing import Mount
+from starlette.types import Receive, Scope, Send
+import uvicorn
 
-from mcp.server.fastmcp import FastMCP
-from mcp.shared.exceptions import McpError
-from mcp.types import ErrorData, INTERNAL_ERROR, INVALID_PARAMS
-from mcp.server.sse import SseServerTransport
+logger = logging.getLogger(__name__)
 
-# Create an MCP server instance with an identifier ("wiki")
-mcp = FastMCP("wiki")
 
-@mcp.tool()
-def extract_wikipedia_article(url: str) -> str:
-    """
-    Retrieves and processes a Wikipedia article from the given URL, extracting
-    the main content and converting it to Markdown format.
+app = Server("mcp-streamable-http-stateless-demo")
 
-    Usage:
-        extract_wikipedia_article("https://en.wikipedia.org/wiki/Gemini_(chatbot)")
-    """
-    try:
-        if not url.startswith("http"):
-            raise ValueError("URL must begin with http or https protocol.")
 
-        response = requests.get(url, timeout=8)
-        if response.status_code != 200:
-            raise McpError(
-                ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f"Unable to access the article. Server returned status: {response.status_code}"
-                )
+@app.call_tool()
+async def call_tool(
+    name: str, arguments: dict
+) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+    # Check if the tool is extract-wikipedia-article
+    if name == "extract-wikipedia-article":
+        # Return dummy content for the Wikipedia article
+        return [
+            types.TextContent(
+                type="text",
+                text="This is the article ...",
             )
-        soup = BeautifulSoup(response.text, "html.parser")
-        content_div = soup.find("div", {"id": "mw-content-text"})
-        if not content_div:
-            raise McpError(
-                ErrorData(
-                    code=INVALID_PARAMS,
-                    message="The main article content section was not found at the specified Wikipedia URL."
-                )
-            )
-        markdown_text = html2text(str(content_div))
-        return markdown_text
+        ]
 
-    except Exception as e:
-        raise McpError(ErrorData(code=INTERNAL_ERROR, message=f"An unexpected error occurred: {str(e)}")) from e
+    # For other tools, keep the existing notification logic
+    ctx = app.request_context
+    interval = arguments.get("interval", 1.0)
+    count = arguments.get("count", 5)
+    caller = arguments.get("caller", "unknown")
 
-sse = SseServerTransport("/messages/")
+    # Send the specified number of notifications with the given interval
+    for i in range(count):
+        await ctx.session.send_log_message(
+            level="info",
+            data=f"Notification {i + 1}/{count} from caller: {caller}",
+            logger="notification_stream",
+            related_request_id=ctx.request_id,
+        )
+        if i < count - 1:  # Don't wait after the last notification
+            await anyio.sleep(interval)
 
-async def handle_sse(request: Request) -> None:
-    _server = mcp._mcp_server
-    async with sse.connect_sse(
-        request.scope,
-        request.receive,
-        request._send,
-    ) as (reader, writer):
-        await _server.run(reader, writer, _server.create_initialization_options())
+    return [
+        types.TextContent(
+            type="text",
+            text=(
+                f"Sent {count} notifications with {interval}s interval"
+                f" for caller: {caller}"
+            ),
+        )
+    ]
+
+
+@app.list_tools()
+async def list_tools() -> list[types.Tool]:
+    return [
+        types.Tool(
+            name="extract-wikipedia-article",
+            description=("Extracts the main content of a Wikipedia article"),
+            inputSchema={
+                "type": "object",
+                "required": ["url"],
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "URL of the Wikipedia article to extract",
+                    },
+                },
+            },
+        )
+    ]
+
+
+session_manager = StreamableHTTPSessionManager(
+    app=app,
+    event_store=None,
+    stateless=True,
+)
+
+
+async def handle_streamable_http(scope: Scope, receive: Receive, send: Send) -> None:
+    await session_manager.handle_request(scope, receive, send)
+
+
+@contextlib.asynccontextmanager
+async def lifespan(app: Starlette) -> AsyncIterator[None]:
+    """Context manager for session manager."""
+    async with session_manager.run():
+        logger.info("Application started with StreamableHTTP session manager!")
+        try:
+            yield
+        finally:
+            logger.info("Application shutting down...")
+
 
 app = Starlette(
     debug=True,
     routes=[
-        Route("/sse", endpoint=handle_sse),
-        Mount("/messages/", app=sse.handle_post_message),
+        Mount("/mcp", app=handle_streamable_http),
     ],
+    lifespan=lifespan,
 )
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="localhost", port=8001)
+    uvicorn.run(app, host="localhost", port=3000)
