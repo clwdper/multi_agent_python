@@ -48,7 +48,7 @@ server.tool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("MCP Server running on stdio");
+  console.log("NODEJS::::MCP Server running on stdio");
 }
 
 main().catch((error) => {

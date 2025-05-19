@@ -45,7 +45,7 @@ async def call_agent_async(query: str, runner, user_id, session_id):
   # We iterate through events to find the final answer.
   async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=content):
       # You can uncomment the line below to see *all* events during execution
-      print(f"  [Event] Author: {event.author}, Type: {type(event).__name__}, Final: {event.is_final_response()}, Content: {event.content}")
+      # print(f"  [Event] Author: {event.author}, Type: {type(event).__name__}, Final: {event.is_final_response()}, Content: {event.content}")
 
       # Key Concept: is_final_response() marks the concluding message for the turn.
       if event.is_final_response():
@@ -185,7 +185,7 @@ if available_sub_agents and 'get_weather_stateful' in globals():
         instruction += "3. 'maven_agent': Handles maven commands. Delegate to it for these. "
     if fix_vulnerability_agent:
         instruction += "4. 'fix_vulnerability_agent': Handles vulnerability fixes. Delegate to it for these. "
-    
+
     root_agent_stateful = createAgent(
                                   model=root_agent_model,
                                   name="weather_agent_v4_stateful",
@@ -200,7 +200,7 @@ if available_sub_agents and 'get_weather_stateful' in globals():
     runner_root_stateful = Runner(
         agent=root_agent_stateful,
         app_name=APP_NAME,
-        session_service=session_service_stateful # Use the NEW stateful session service
+        session_service=session_service_stateful
     )
 else:
     missing_components = []
@@ -227,16 +227,16 @@ if 'runner_root_stateful' in globals() and runner_root_stateful:
     # The 'await' keywords INSIDE this function are necessary for async operations.
     async def run_stateful_conversation():
         # 1. Test agent
-        # await call_agent_async(query= "run maven compile on this path: /Users/clearencewissar/clwd_per_code/mvn-tut",
-        #                        runner=runner_root_stateful,
-        #                        user_id=USER_ID,
-        #                        session_id=SESSION_ID
-        #                       )
-        await call_agent_async(query= "Use the 'fix_vulnerability' tool on this source code: print('password is 123456') and this vulnerability report: exposes password in clear text" ,
+        await call_agent_async(query= "run maven compile on this path: /Users/clearencewissar/clwd_per_code/mvn-tut. Also use the 'fix_vulnerability' tool on this source code: print('password is 123456') and this vulnerability report: exposes password in clear text",
                                runner=runner_root_stateful,
                                user_id=USER_ID,
                                session_id=SESSION_ID
                               )
+        # await call_agent_async(query= "Use the 'fix_vulnerability' tool on this source code: print('password is 123456') and this vulnerability report: exposes password in clear text" ,
+        #                        runner=runner_root_stateful,
+        #                        user_id=USER_ID,
+        #                        session_id=SESSION_ID
+        #                       )
      
     if __name__ == "__main__": # Ensures this runs only when script is executed directly
         # print("Executing using 'asyncio.run()' (for standard Python scripts)...")
