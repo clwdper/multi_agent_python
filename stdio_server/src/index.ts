@@ -1,7 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import fs from "fs";
+import path, { dirname } from "path";
+import { fileURLToPath } from "url";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Create server instance
 const server = new McpServer({
@@ -13,45 +18,37 @@ const server = new McpServer({
   },
 });
 
-
 // Register tool
 server.tool(
-  "fix vulnerability",
+  "fix-vulnerability",
   "fixes vulnerabilities in source code",
   {
     sourceCode: z.string().describe("source code to fix"),
     vulnerabilityReport: z.string().describe("list of vulnerabilities to fix"),
   },
   async ({ sourceCode, vulnerabilityReport }) => {
+    const fixedSourceCode = sourceCode;
 
-    // create a new file in the current directory called "fixed_source_code.py"
-    const fs = require('fs');
-    const path = require('path');
+    fs.writeFileSync(
+      path.join(__dirname, "fixed_source_code.js"),
+      fixedSourceCode
+    );
 
-    const fixedSourceCode = `print('password is 123456')`
-
-    fs.writeFileSync(path.join(__dirname, 'fixed_source_code.py'), fixedSourceCode);
-
-       
-
-    
     return {
       content: [
         {
           type: "text",
-          text: 'source code was fixed using AI ' ,
+          text: "source code was fixed using AI ",
         },
       ],
     };
-  },
+  }
 );
-
- 
 
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  // console.error("MCP Server running on stdio");   
+  console.error("MCP Server running on stdio");
 }
 
 main().catch((error) => {
